@@ -1,118 +1,153 @@
-import streamlit as st
-import tempfile
 import os
+import socket
+import tempfile
+from flask import Flask, render_template, request
+from werkzeug.utils import secure_filename
 from llm import build_vector_db, build_engines
 from chromadb import PersistentClient
+from langchain_community.vectorstores import Chroma
+from langchain_groq import ChatGroq
+from sentence_transformers import SentenceTransformer
 
-st.title("🎓 EduGenie_Chatbot")
-st.write('“I am with you, guiding you toward your dreams.”')
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 40 * 1024 * 1024
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
-uploaded_file = st.file_uploader("Upload document", type=["pdf", "docx", "txt"])
 
-if "vectordb" not in st.session_state:
-    st.session_state.vectordb = None
-if "retriever" not in st.session_state:
-    st.session_state.retriever = None
-if "llm" not in st.session_state:
-    st.session_state.llm = None
+def get_free_port(preferred_port=8501):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("0.0.0.0", preferred_port))
+            return preferred_port
+        except OSError:
+            sock.bind(("0.0.0.0", 0))
+            return sock.getsockname()[1]
 
-# FILE UPLOAD HANDLING
+class Embedder:
+    def __init__(self):
+        self.model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-if uploaded_file is not None:
+    def embed_documents(self, texts):
+        return self.model.encode(texts).tolist()
 
+    def embed_query(self, text):
+        return self.model.encode([text])[0].tolist()
+
+
+def allowed_file(filename):
+    extension = os.path.splitext(filename.lower())[1]
+    return extension in ALLOWED_EXTENSIONS
+
+
+def load_existing_vectordb():
     client = PersistentClient(path="db")
     try:
-        client.delete_collection("edugenie_collection")
-    except:
-        pass
+        return Chroma(client=client, collection_name="edugenie_collection", embedding_function=Embedder())
+    except Exception:
+        return None
 
-    file_name = uploaded_file.name
-    ext = os.path.splitext(file_name)[1].lower()
 
-    if ext not in [".pdf", ".docx", ".txt"]:
-        st.error("Unsupported file type. Please upload PDF, DOCX, or TXT.")
-        st.stop()
+def build_general_llm():
+    return ChatGroq(
+        groq_api_key=os.getenv("GROQ_API_KEY"),
+        model_name="llama-3.3-70b-versatile",
+        temperature=0.1,
+    )
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-        tmp.write(uploaded_file.read())
-        file_path = tmp.name
 
-    vectordb = build_vector_db(file_path)
-    retriever, llm = build_engines(vectordb)
+def is_educational(question):
+    edu_keywords = [
+        "study", "learn", "explain", "define", "what is", "difference",
+        "example", "notes", "subject", "topic", "machine learning",
+        "ai", "ml", "dl", "math", "science", "engineering",
+        "concept", "education", "syllabus", "chapter"
+    ]
+    return any(k in question.lower() for k in edu_keywords)
 
-    st.session_state.vectordb = vectordb
-    st.session_state.retriever = retriever
-    st.session_state.llm = llm
 
-    st.success("Document processed successfully! Ask questions.")
+def query_document(question, retriever, llm):
+    docs = retriever.invoke(question)
+    if docs:
+        context = "\n\n".join([d.page_content for d in docs])
+        prompt = f"""
+Answer the question using ONLY the following document content.
+If answer is not found, return 'NOT_FOUND'.
 
-question = st.text_input("Ask your question:")
+DOCUMENT:
+{context}
 
-if st.button("Go ➤"):
-
-    if st.session_state.vectordb is None:
-
-        edu_keywords = [
-            "study", "learn", "explain", "define", "what is", "difference",
-            "example", "notes", "subject", "topic", "machine learning",
-            "ai", "ml", "dl", "math", "science", "engineering",
-            "concept", "education", "syllabus", "chapter"
-        ]
-
-        if any(k in question.lower() for k in edu_keywords):
-
-            if st.session_state.llm is None:
-                from langchain_groq import ChatGroq
-                llm = ChatGroq(
-                    groq_api_key=os.getenv("GROQ_API_KEY"),
-                    model_name="llama-3.3-70b-versatile",
-                    temperature=0.1
-                )
-                st.session_state.llm = llm
-
-            response = st.session_state.llm.invoke(question)
-            answer = response.content if hasattr(response, "content") else str(response)
-
-            st.markdown("### Answer:")
-            st.markdown(answer)
-
-        else:
-            st.error("❌ This is an educational assistant. Upload a document or ask an education-related question.")
-
-    else:
-
-        retriever = st.session_state.retriever
-        llm = st.session_state.llm
-
-        docs = retriever.invoke(question)
-
-        if docs:
-            context = "\n\n".join([d.page_content for d in docs])
-
-            prompt = f"""
-            Answer the question using ONLY the following document content.
-            If answer is not found, return 'NOT_FOUND'.
-
-            DOCUMENT:
-            {context}
-
-            QUESTION:
-            {question}
-            """
-
-            result = llm.invoke(prompt)
-            answer = result.content if hasattr(result, "content") else str(result)
-
-            if "NOT_FOUND" in answer:
-                fallback = llm.invoke(question)
-                answer = fallback.content if hasattr(fallback, "content") else str(fallback)
-
-            st.markdown("Answer:")
-            st.markdown(answer)
-
-        else:
+QUESTION:
+{question}
+"""
+        result = llm.invoke(prompt)
+        answer = result.content if hasattr(result, "content") else str(result)
+        if "NOT_FOUND" in answer:
             fallback = llm.invoke(question)
-            answer = fallback.content if hasattr(fallback, "content") else str(fallback)
+            return fallback.content if hasattr(fallback, "content") else str(fallback)
+        return answer
+    fallback = llm.invoke(question)
+    return fallback.content if hasattr(fallback, "content") else str(fallback)
 
-            st.markdown("Answer:")
-            st.markdown(answer)
+
+@app.route("/", methods=["GET", "POST"])
+def home():
+    answer = None
+    error = None
+    question = ""
+    status = None
+
+    if request.method == "POST":
+        question = request.form.get("question", "").strip()
+        document = request.files.get("document")
+
+        if not question:
+            error = "Please enter a question to continue."
+        else:
+            if document and document.filename:
+                if not allowed_file(document.filename):
+                    error = "Unsupported file type. Please upload PDF, DOCX, or TXT."
+                else:
+                    filename = secure_filename(document.filename)
+                    ext = os.path.splitext(filename)[1].lower()
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                        document.save(tmp.name)
+                        file_path = tmp.name
+
+                    client = PersistentClient(path="db")
+                    try:
+                        client.delete_collection("edugenie_collection")
+                    except Exception:
+                        pass
+
+                    vectordb = build_vector_db(file_path)
+                    retriever, llm = build_engines(vectordb)
+                    answer = query_document(question, retriever, llm)
+                    status = f"Processed {filename} and answered from the uploaded document."
+            else:
+                vectordb = load_existing_vectordb()
+                if vectordb:
+                    retriever, llm = build_engines(vectordb)
+                    answer = query_document(question, retriever, llm)
+                    status = "Using the previously uploaded document."
+                elif is_educational(question):
+                    llm = build_general_llm()
+                    response = llm.invoke(question)
+                    answer = response.content if hasattr(response, "content") else str(response)
+                    status = "Answered with educational AI knowledge."
+                else:
+                    error = "This assistant specializes in educational topics and document-based study help."
+
+    return render_template(
+        "index.html",
+        answer=answer,
+        error=error,
+        question=question,
+        status=status,
+    )
+
+
+if __name__ == "__main__":
+    port = get_free_port(8501)
+    print(f"Starting EduGenie on http://127.0.0.1:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

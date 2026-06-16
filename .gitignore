@@ -1,0 +1,17 @@
+# Python environment
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Environment variables
+.env
+
+# Local database files
+db/
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp

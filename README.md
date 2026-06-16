@@ -1,32 +1,17 @@
-# 📘 EduGenie – AI-Powered Educational Assistant  
-*A Document-Aware RAG Chatbot using Groq, LangChain, ChromaDB & Streamlit*
+# 📘 EduGenie – AI-Powered Educational Assistant
+*A Document-aware RAG Chatbot using Groq, LangChain, ChromaDB & Flask*
 
 ## 🚀 Overview
-EduGenie is an intelligent educational assistant that helps students understand study materials quickly.  
-It allows users to upload PDF, DOCX, or TXT study materials and ask questions about them.
-
-EduGenie works in two modes:
-
-### 🔹 1. Document-Aware RAG Mode  
-Uses Retrieval-Augmented Generation (RAG) to answer strictly from the uploaded document.
-
-### 🔹 2. Educational General Knowledge Mode  
-If no document is uploaded, EduGenie answers education-related questions using Groq’s LLaMA-3.3-70B model.
-
----
+EduGenie is an intelligent education assistant for students and learners. It accepts PDF, DOCX, or TXT study materials, builds a local vector store, and answers questions using a document-aware AI workflow.
 
 ## 🧠 Features
-- Upload PDF / DOCX / TXT  
-- NLTK preprocessing  
-- LangChain text chunking  
-- SentenceTransformer embeddings  
-- ChromaDB vector storage  
-- Fast inference using Groq LLaMA-3.3-70B  
-- Streamlit interface  
-- Auto-clears old vectors  
-- Educational-only assistant  
-
----
+- Upload PDF / DOCX / TXT
+- Document retrieval with ChromaDB
+- SentenceTransformer embeddings
+- LangChain text chunking and prompt handling
+- Groq LLaMA-3.3-70B inference
+- Flask-based web UI with custom HTML/CSS frontend
+- Local vector store cleanup between uploads
 
 ## 📂 Project Structure
 ```
@@ -36,3 +21,27 @@ EduGenie_Chatbot/
 │── .env
 │── db/
 │── requirements.txt
+│── templates/
+│   └── index.html
+│── static/
+│   └── styles.css
+│── .gitignore
+```
+
+## 🚀 Run Locally
+1. Create and activate your virtual environment.
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Create a `.env` file with `GROQ_API_KEY`.
+4. Start the app:
+   ```bash
+   python app.py
+   ```
+5. Open the URL shown in the console.
+
+## ⚠️ Notes
+- Do not commit `.env` or `db/` to source control.
+- The app uses a local ChromaDB persistent client in `db/`.
+- For deployment, ensure `GROQ_API_KEY` is set in the environment.
