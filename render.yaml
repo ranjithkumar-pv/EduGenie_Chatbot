@@ -2,10 +2,11 @@ services:
   - type: web
     name: edugenie-chatbot
     env: python
+    pythonVersion: 3.11.9
     plan: free
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 1 --worker-class sync
     envVars:
       - key: GROQ_API_KEY
         value: ""
