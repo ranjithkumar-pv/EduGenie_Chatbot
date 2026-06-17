@@ -1,0 +1,12 @@
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+db
+*.log
+.git
+.github
+render.yaml
+runtime.txt
